@@ -8,9 +8,18 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 
 	ping "github.com/VictoriousAnnro/p2pAssign4/grpc"
 	"google.golang.org/grpc"
+)
+
+type Status string
+
+const (
+	Free   = "Free"
+	Wanted = "Wanted"
+	Held   = "Held"
 )
 
 func main() {
@@ -21,10 +30,12 @@ func main() {
 	defer cancel()
 
 	p := &peer{
-		id:            ownPort,
-		amountOfPings: make(map[int32]int32),
-		clients:       make(map[int32]ping.PingClient),
-		ctx:           ctx,
+		id: ownPort,
+		//amountOfPings: make(map[int32]int32),
+		queue:   make([]ping.PingClient, 0),
+		clients: make(map[int32]ping.PingClient),
+		ctx:     ctx,
+		state:   Free,
 	}
 
 	// Create listener tcp on port ownPort
@@ -61,33 +72,48 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		p.sendPingToAll()
+		p.sendRequestToAll()
 	}
 }
 
 type peer struct {
 	ping.UnimplementedPingServer
-	id            int32
-	amountOfPings map[int32]int32
-	clients       map[int32]ping.PingClient
-	ctx           context.Context
+	id      int32
+	queue   []ping.PingClient
+	clients map[int32]ping.PingClient
+	ctx     context.Context
+	state   Status
 }
 
-func (p *peer) Ping(ctx context.Context, req *ping.Request) (*ping.Reply, error) {
+func (p *peer) RequestCar(ctx context.Context, req *ping.Request) (*ping.Reply, error) {
 	id := req.Id
-	p.amountOfPings[id] += 1
+	//p.amountOfPings[id] += 1
 
-	rep := &ping.Reply{Amount: p.amountOfPings[id]}
+	/*if p.state == Wanted && amountOfThumbsUp = 2 {
+
+		p.state = "Held"
+		p.CriticalSection(ctx)
+	}*/
+
+	rep := &ping.Reply{} //Amount: p.amountOfPings[id]
 	return rep, nil
 }
 
-func (p *peer) sendPingToAll() {
+func (p *peer) sendRequestToAll() {
 	request := &ping.Request{Id: p.id}
 	for id, client := range p.clients {
-		reply, err := client.Ping(p.ctx, request)
+		reply, err := client.RequestCar(p.ctx, request)
 		if err != nil {
 			fmt.Println("something went wrong")
 		}
-		fmt.Printf("Got reply from id %v: %v\n", id, reply.Amount)
+		fmt.Printf("Got reply from id %v: %v\n", id, reply)
 	}
+}
+
+func (p *peer) CriticalSection(ctx context.Context) {
+
+	log.Printf("Client %v is playing Ceenja Impact", p.id)
+	time.Sleep(2000 * time.Millisecond)
+	log.Printf("Client %v is done", p.id)
+	p.state = "Free"
 }
