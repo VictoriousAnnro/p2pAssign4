@@ -1,4 +1,4 @@
-module github.com/NaddiNadja/peer-to-peer
+module github.com/VictoriousAnnro/p2pAssign4
 
 go 1.17
 
