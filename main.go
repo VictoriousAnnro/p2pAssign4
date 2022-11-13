@@ -22,6 +22,10 @@ const (
 	Held   = "Held"
 )
 
+//go run main.go 0
+//go run main.go 1
+//go run main.go 2
+
 func main() {
 	arg1, _ := strconv.ParseInt(os.Args[1], 10, 32)
 	ownPort := int32(arg1) + 5000
@@ -30,8 +34,7 @@ func main() {
 	defer cancel()
 
 	p := &peer{
-		id: ownPort,
-		//amountOfPings: make(map[int32]int32),
+		id:      ownPort,
 		queue:   make([]ping.PingClient, 0),
 		clients: make(map[int32]ping.PingClient),
 		ctx:     ctx,
@@ -79,6 +82,7 @@ func main() {
 type peer struct {
 	ping.UnimplementedPingServer
 	id      int32
+	lamport int32
 	queue   []ping.PingClient
 	clients map[int32]ping.PingClient
 	ctx     context.Context
@@ -86,21 +90,34 @@ type peer struct {
 }
 
 func (p *peer) RequestCar(ctx context.Context, req *ping.Request) (*ping.Reply, error) {
-	id := req.Id
-	//p.amountOfPings[id] += 1
 
-	/*if p.state == Wanted && amountOfThumbsUp = 2 {
+	for {
+		if p.state == Wanted && (p.lamport < req.Lamport || (p.id < req.Id && p.lamport == req.Lamport)) || p.state == Held {
+			//put in queue, reply later
+			//queue.add(clinet)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		} else {
+			break
+		}
+	}
 
-		p.state = "Held"
-		p.CriticalSection(ctx)
-	}*/
+	if p.lamport < req.Lamport {
+		p.lamport = req.Lamport
+	}
 
-	rep := &ping.Reply{} //Amount: p.amountOfPings[id]
+	p.lamport++
+
+	rep := &ping.Reply{Lamport: p.lamport}
 	return rep, nil
 }
 
 func (p *peer) sendRequestToAll() {
-	request := &ping.Request{Id: p.id}
+	p.state = Wanted
+	p.lamport++
+	request := &ping.Request{Id: p.id,
+		Lamport: p.lamport}
+
 	for id, client := range p.clients {
 		reply, err := client.RequestCar(p.ctx, request)
 		if err != nil {
@@ -108,12 +125,16 @@ func (p *peer) sendRequestToAll() {
 		}
 		fmt.Printf("Got reply from id %v: %v\n", id, reply)
 	}
+
+	p.state = Held
+	p.CriticalSection()
 }
 
-func (p *peer) CriticalSection(ctx context.Context) {
+func (p *peer) CriticalSection() {
+	p.lamport++
 
 	log.Printf("Client %v is playing Ceenja Impact", p.id)
-	time.Sleep(2000 * time.Millisecond)
+	time.Sleep(20000 * time.Millisecond)
 	log.Printf("Client %v is done", p.id)
-	p.state = "Free"
+	p.state = Free
 }
