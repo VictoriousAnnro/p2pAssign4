@@ -29,13 +29,14 @@ const (
 func main() {
 	arg1, _ := strconv.ParseInt(os.Args[1], 10, 32)
 	ownPort := int32(arg1) + 5000
+	f := setLog()
+	defer f.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	p := &peer{
 		id:      ownPort,
-		queue:   make([]ping.PingClient, 0),
 		clients: make(map[int32]ping.PingClient),
 		ctx:     ctx,
 		state:   Free,
@@ -63,7 +64,7 @@ func main() {
 		}
 
 		var conn *grpc.ClientConn
-		fmt.Printf("Trying to dial: %v\n", port)
+		fmt.Printf("Client %v is trying to dial: %v\n", arg1, port)
 		conn, err := grpc.Dial(fmt.Sprintf(":%v", port), grpc.WithInsecure(), grpc.WithBlock())
 		if err != nil {
 			log.Fatalf("Could not connect: %s", err)
@@ -83,7 +84,6 @@ type peer struct {
 	ping.UnimplementedPingServer
 	id      int32
 	lamport int32
-	queue   []ping.PingClient
 	clients map[int32]ping.PingClient
 	ctx     context.Context
 	state   Status
@@ -93,8 +93,6 @@ func (p *peer) RequestCar(ctx context.Context, req *ping.Request) (*ping.Reply, 
 
 	for {
 		if p.state == Wanted && (p.lamport < req.Lamport || (p.id < req.Id && p.lamport == req.Lamport)) || p.state == Held {
-			//put in queue, reply later
-			//queue.add(clinet)
 			time.Sleep(100 * time.Millisecond)
 			continue
 		} else {
@@ -115,15 +113,18 @@ func (p *peer) RequestCar(ctx context.Context, req *ping.Request) (*ping.Reply, 
 func (p *peer) sendRequestToAll() {
 	p.state = Wanted
 	p.lamport++
+	log.Printf("Client %v is requesting access to play ceenja impact", p.id)
+	fmt.Printf("Client %v is requesting access to play ceenja impact \n", p.id)
 	request := &ping.Request{Id: p.id,
 		Lamport: p.lamport}
 
 	for id, client := range p.clients {
-		reply, err := client.RequestCar(p.ctx, request)
+		_, err := client.RequestCar(p.ctx, request)
 		if err != nil {
-			fmt.Println("something went wrong")
+			log.Println("something went wrong")
 		}
-		fmt.Printf("Got reply from id %v: %v\n", id, reply)
+		log.Printf("Client %v Got reply from id: %v", p.id, id)
+		fmt.Printf("Client %v Got reply from id: %v \n", p.id, id)
 	}
 
 	p.state = Held
@@ -134,7 +135,24 @@ func (p *peer) CriticalSection() {
 	p.lamport++
 
 	log.Printf("Client %v is playing Ceenja Impact", p.id)
+	fmt.Printf("Client %v is playing Ceenja Impact \n", p.id)
 	time.Sleep(20000 * time.Millisecond)
 	log.Printf("Client %v is done", p.id)
+	fmt.Printf("Client %v is done \n", p.id)
 	p.state = Free
+}
+
+func setLog() *os.File {
+	// Clears the log.txt file when a new server is started
+	if err := os.Truncate("log.txt", 0); err != nil {
+		log.Printf("Failed to truncate: %v", err)
+	}
+
+	// This connects to the log file/changes the output of the log informaiton to the log.txt file.
+	f, err := os.OpenFile("log.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	log.SetOutput(f)
+	return f
 }
